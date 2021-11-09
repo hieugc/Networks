@@ -14,13 +14,6 @@ CACHE_FILE_NAME = "cache-"
 CACHE_FILE_EXT = ".jpg"
 
 class Client:
-
-	SETUP_STR = 'SETUP'
-	PLAY_STR = 'PLAY'
-	PAUSE_STR = 'PAUSE'
-	TEARDOWN_STR = 'TEARDOWN'
-	SKIP_STR= 'SKIP'
-	
 	SWITCH = -1
 	INIT = 0
 	READY = 1
@@ -38,6 +31,11 @@ class Client:
 	TRANSPORT = "RTP/UDP"
 	
 	
+	SETUP_STR = 'SETUP'
+	PLAY_STR = 'PLAY'
+	PAUSE_STR = 'PAUSE'
+	TEARDOWN_STR = 'TEARDOWN'
+	SKIP_STR= 'SKIP'
 	
 	# Initiation..
 	def __init__(self, master, serveraddr, serverport, rtpport, filename):
@@ -73,10 +71,15 @@ class Client:
 	def createWidgets(self):
 		"""Build GUI."""
 		# Create Setup button
-		self.setup = Button(self.master, width=20, padx=3, pady=3)
-		self.setup["text"] = "Setup"
-		self.setup["command"] = self.setupMovie
-		self.setup.grid(row=1, column=0, padx=2, pady=2)
+		#self.setup = Button(self.master, width=20, padx=3, pady=3)
+		#self.setup["text"] = "Setup"
+		#self.setup["command"] = self.setupMovie
+		#self.setup.grid(row=1, column=0, padx=2, pady=2)
+
+		self.choose = Button(self.master, width=20, padx=3, pady=3)
+		self.choose["text"] = "Select film"
+		self.choose["command"] = self.nextfilm
+		self.choose.grid(row=1, column=0, padx=2, pady=2)
 		
 		# Create Play button		
 		self.start = Button(self.master, width=20, padx=3, pady=3)
@@ -116,34 +119,28 @@ class Client:
 		self.end_time=Label(self.master,text=str(datetime.timedelta(seconds=0)))
 		self.end_time.grid(row=4,column=3,sticky='ew')
 
-		self.choose = Button(self.master, width=20, padx=3, pady=3)
-		self.choose["text"] = "Select film"
-		self.choose["command"] = self.nextfilm
-		self.choose.grid(row=5, column=3, padx=2, pady=2)
-
 		self.label = Label(self.master, height=19)
 		self.label.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5) 
 
 	def nextfilm(self):
 		if self.state != self.PLAYING:
 			if self.played == 0:
-				self.delayfunc(float(0.1))
+				self.delayfunc(float(0.4))
 				self.playMovie()
-				print(self.sessionId)
+
 			if self.played == 1:
 				self.breakpoint = 1
 				self.played = 0
-				print(self.sessionId)
+
 				if self.teardownAcked == 0:
-					print(self.sessionId)
 					self.delayfunc(float(0.1))
 					self.exitClient()
-					print("tear")
-				print(self.sessionId)
+				
 				self.delayfunc(float(1))
-				self.connectToServer()
-				print(self.sessionId)
+				self.connectToServer() #TCP close()
 				self.breakpoint = 0
+				self.delayfunc(float(0.5))
+				print(self.teardownAcked)
 
 			self.index += 1
 			if self.index == len(self.listfilm):
@@ -151,11 +148,11 @@ class Client:
 			self.fileName = self.listfilm[self.index]
 			self.state = self.INIT
 			self.choose["text"] = "File: " + str(self.fileName)
+			self.setupMovie()
 
 	def pass_time(self, time):
 		#self.playEvent.set()
 		self.index_frame=int(float(self.my_slider.get())*20) + time*20
-		print('self.index_frame',self.index_frame)
 
 		if self.index_frame < 0:
 			self.index_frame = 0
@@ -170,10 +167,9 @@ class Client:
 	def setupMovie(self):
 		"""Setup button handler."""
 		if self.state == self.INIT:
-			self.delayfunc(float(0.5))
+			self.delayfunc(float(0.4))
 			self.removed = 0
 			self.sendRtspRequest(self.SETUP)
-			self.teardownAcked = 0
 	def description(self):
 		if self.state != self.INIT:
 			self.sendRtspRequest(self.DESCRIPTION)
@@ -181,6 +177,7 @@ class Client:
 		"""Teardown button handler."""
 		self.sendRtspRequest(self.TEARDOWN)
 		print("Video data rate: " + str(self.rate) + "bytes/sec")
+		print("Data lost: " + str(self.lost))
 	def pauseMovie(self):
 		"""Pause button handler."""
 		if self.state == self.PLAYING:
@@ -188,8 +185,10 @@ class Client:
 			self.paused = 1
 	def playMovie(self):
 		"""Play button handler."""
+		#self.setupMovie()
 		if self.state == self.READY:
 			# Create a new thread to listen for RTP packets
+			self.teardownAcked = 0
 			self.sendRtspRequest(self.PLAY)
 	def listenRtp(self):
 		"""Listen for RTP packets."""
@@ -198,17 +197,16 @@ class Client:
 			if self.playEvent.isSet(): 
 				break
 			if self.teardownAcked == 1:
-				print("listen")
 				if self.removed == 0:
-					print("listen")
 					os.remove(CACHE_FILE_NAME + str(self.sessionId) + CACHE_FILE_EXT) # Delete the cache image from video
+					print("removed listen")
 					self.removed = 1
 					self.sessionId = 0
 				self.rtpSocket.close()
+				print("removed listen")
 				break
 			else:
 				try:
-					print("LISTENING...")
 					data, address = self.rtpSocket.recvfrom(20480) # < send <= 14000 bytes
 					if data:
 						rtpPacket = RtpPacket()
@@ -221,8 +219,7 @@ class Client:
 						self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
 						self.slider_label['text']=str(datetime.timedelta(seconds=self.my_slider.get()))
 				except:
-					self.loss += 1
-					break								
+					self.lost += 1							
 	def writeFrame(self, data):
 		"""Ghi khung nhận được vào tệp hình ảnh tạm thời. Trả lại tệp hình ảnh."""
 		cachename = CACHE_FILE_NAME + str(self.sessionId) + CACHE_FILE_EXT
@@ -241,7 +238,6 @@ class Client:
 		self.rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)#TCP
 		try:
 			self.rtspSocket.connect((self.serverAddr, self.serverPort))
-			print("Connect ok")
 		except:
 			tkinter.messagebox.showerror("Error connection", "Connect to serverAddress " + str(self.serverAddr) + " is fail!")
 			self.rtspSocket.close()
@@ -277,7 +273,8 @@ class Client:
 		# Play request
 		elif requestCode == self.PLAY and self.state == self.READY:
 			# Update RTSP sequence number.
-			self.rtspSeq+=1
+			self.rtspSeq += 1
+			self.played = 1
         
 			# Write the RTSP request to be sent.
 			request = "%s %s %s" % (self.PLAY_STR,self.fileName,self.RTSP_VER)
@@ -287,27 +284,22 @@ class Client:
 			
 			# Keep track of the sent request.
 			self.requestSent = self.PLAY
-			self.played = 1
         # Pause request
 		elif requestCode == self.PAUSE and self.state == self.PLAYING:
 			# Update RTSP sequence number.
 			self.rtspSeq+=1
-			
 			request = "%s %s %s" % (self.PAUSE_STR,self.fileName,self.RTSP_VER)
 			request+="\nCSeq: %d" % self.rtspSeq
 			request+="\nSession: %d"%self.sessionId
 			
 			self.requestSent = self.PAUSE
-			
 			# The play thread exits. A new thread is created on resume.
 			self.playEvent.set()
 			
 		# Teardown request
 		elif requestCode == self.TEARDOWN and not self.state == self.INIT:
-        
 			# Update RTSP sequence number.
 			self.rtspSeq += 1
-			
 			# Write the RTSP request to be sent.
 			request = "%s %s %s" % (self.TEARDOWN_STR, self.fileName, self.RTSP_VER)
 			request+="\nCSeq: %d" % self.rtspSeq
@@ -315,6 +307,7 @@ class Client:
 			# The play thread exits. A new thread is created on resume.
 			
 			self.requestSent = self.TEARDOWN
+
 		elif requestCode == self.DESCRIPTION and self.state != self.INIT:
 			self.requestSent = self.DESCRIPTION
 			#message request
@@ -330,43 +323,62 @@ class Client:
 	def recvRtspReply(self):
 		"""Receive RTSP reply from the server."""
 		while True:
-			
-			reply = self.rtspSocket.recv(256)
-			
-			if reply: 
-				self.parseRtspReply(reply)
+			try:
+				reply = self.rtspSocket.recv(256)
+				
+				if reply: 
+					self.parseRtspReply(reply)
 
-			if self.requestSent == self.TEARDOWN:
-				if self.removed == 0 and self.breakpoint == 0 or self.removed == 0 and self.paused == 1:
-					print("recv")
-					os.remove(CACHE_FILE_NAME + str(self.sessionId) + CACHE_FILE_EXT) # Delete the cache image from video
-					self.removed = 1
-					self.sessionId = 0
-					self.paused = 0
-					
-				self.rtspSocket.close()
-				break
+				if self.requestSent == self.TEARDOWN:
+					if self.removed == 0 and self.breakpoint == 0 or self.removed == 0 and self.paused == 1:
+						if self.removed == 0:
+							os.remove(CACHE_FILE_NAME + str(self.sessionId) + CACHE_FILE_EXT) # Delete the cache image from video
+							print("removed recv")
+							self.removed = 1
+						self.sessionId = 0
+						self.paused = 0
+						print("removed recv")
+						
+					self.rtspSocket.close()
+					print("removed recv")
+					break
+			except:
+				if self.requestSent == self.TEARDOWN:
+					if self.removed == 0 and self.breakpoint == 0 or self.removed == 0 and self.paused == 1:
+						if self.removed == 0:
+							os.remove(CACHE_FILE_NAME + str(self.sessionId) + CACHE_FILE_EXT) # Delete the cache image from video
+							print("removed recv")
+						self.removed = 1
+						self.sessionId = 0
+						self.paused = 0
+						print("removed recv")
+						
+					self.rtspSocket.close()
+					print("removed recv")
+					break
+			
 			# Close the RTSP socket upon requesting Teardown
 	def parseRtspReply(self, data):
 		"""Parse the RTSP reply from the server."""
 		lines = data.decode().split('\n')
 		seqNum = int(lines[1].split(' ')[1])
 		totaltime= float(lines[3].split(' ')[1])
+
 		#Chỉ xử lý nếu số thứ tự của câu trả lời của máy chủ giống với số thứ tự của yêu cầu
 		if seqNum == self.rtspSeq:
 			session = int(lines[2].split(' ')[1])
-
 			# New RTSP session ID
 			if self.sessionId == 0:
 				self.sessionId = session
-			
 			# Chỉ xử lý nếu ID phiên giống nhau
 			if self.sessionId == session:
 				if int(lines[0].split(' ')[1]) == 200: 
 					if self.requestSent == self.SETUP:
 						if self.state == self.INIT:
+							# Liên kết ổ cắm với địa chỉ bằng cách sử dụng cổng RTP do người dùng máy khách cung cấp.
+							self.state = self.READY
 							self.rate = 0
-							self.loss = 0
+							self.lost= 0
 							self.end_time["text"] = str(datetime.timedelta(seconds=totaltime))
 							v = datetime.timedelta()
 							self.my_slider=Scale(self.master,variable = v,from_=0,to=totaltime,orient=HORIZONTAL)
@@ -377,9 +389,6 @@ class Client:
 							self.slider_label.grid(row=3, columnspan=4, sticky='ew')
 							# Open RTP port.
 							self.openRtpPort() 
-
-							# Liên kết ổ cắm với địa chỉ bằng cách sử dụng cổng RTP do người dùng máy khách cung cấp.
-							self.state = self.READY
 
 					elif self.requestSent == self.PLAY and self.state == self.READY:
 						self.state = self.PLAYING

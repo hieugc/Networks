@@ -29,7 +29,6 @@ class ServerWorker:
 		self.clientInfo = clientInfo
 		self.wait_time=0.05
 		self.frame_rate=20
-		self.filename = ""
 	def run(self):
 		threading.Thread(target=self.recvRtspRequest).start()
 	
@@ -49,7 +48,7 @@ class ServerWorker:
 		#									'CSeq: self.rtspSeq','Transport: self.TRANSPORT; client_port= self.rtpPort']
 		line1 = request[0].split(' ')#self.Type_STR,self.fileName,self.RTSP_VER
 		requestType = line1[0]
-		print('requestType',requestType)
+
 		# Get the media file name
 		filename = line1[1]
 		
@@ -72,8 +71,6 @@ class ServerWorker:
 				
 				try:
 					self.clientInfo['videoStream'] = VideoStream(filename)
-					self.filenamerecv = filename
-					print(filename)
 					self.state = self.READY
 				except IOError:
 					self.replyRtsp(self.FILE_NOT_FOUND_404, seq[1])
@@ -152,7 +149,6 @@ class ServerWorker:
 			if self.clientInfo['event'].isSet(): 
 				break 
 			data = self.clientInfo['videoStream'].nextFrame()
-			print("send Data OK")
 			if data: 
 				frameNumber = self.clientInfo['videoStream'].frameNbr()
 				try:
